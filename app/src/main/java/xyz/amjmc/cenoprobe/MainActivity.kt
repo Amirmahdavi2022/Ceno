@@ -137,6 +137,10 @@ class MainActivity : Activity() {
                 .setListenOnTcp("127.0.0.1:0")
                 .setFrontEndEp("127.0.0.1:0")
                 .setFrontEndAccessToken(frontToken)
+                // What the official Ceno build does for Iran: extra BitTorrent
+                // bootstrap node IR_1, and plain system DNS instead of DoH.
+                .setBtBootstrapExtras(setOf(CenoNetwork.BT_BOOTSTRAP_IR_1))
+                .setDnsProtocols(setOf("plain"))
                 // Force every request over the Ceno network: no direct access.
                 .setDisableOriginAccess(true)
                 .build()
@@ -177,6 +181,8 @@ class MainActivity : Activity() {
 
         // 2) wait for injectors (up to 4 min), printing status as it changes
         var lastLine = ""
+        var lastPrint = 0L
+        log("bootstrap extra: IR_1 ${CenoNetwork.BT_BOOTSTRAP_IR_1}, DNS: plain")
         var ready = false
         while (elapsed(t0) < 240_000) {
             val st = status(frontEp.toString())
@@ -185,7 +191,9 @@ class MainActivity : Activity() {
                 val line = "state=${st.optString("state")} injector_ready=$ready " +
                     "injector_peers=${st.optInt("injector_peers_n", -1)} " +
                     "udp_reachable=${st.optString("udp_world_reachable", "?")}"
-                if (line != lastLine) { log("[${secs(t0)}s] $line"); lastLine = line }
+                if (line != lastLine || elapsed(lastPrint) >= 30_000) {
+                    log("[${secs(t0)}s] $line"); lastLine = line; lastPrint = System.currentTimeMillis()
+                }
                 if (ready) break
             } else {
                 log("[${secs(t0)}s] status not available yet (engine state=${bg.getState()})")

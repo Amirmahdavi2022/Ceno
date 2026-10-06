@@ -11,8 +11,8 @@ android {
         applicationId = "xyz.amjmc.cenoprobe"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1-probe"
+        versionCode = 3
+        versionName = "0.1.2-probe"
     }
 
     buildTypes {

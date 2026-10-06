@@ -13,5 +13,8 @@ object CenoNetwork {
         "-----END CERTIFICATE-----\n" +
         ""
     const val CACHE_TYPE = "bep5-http"
+
+    /** IR_1 from BuildConfig.BT_BOOTSTRAP_EXTRAS of the official Ceno 2.11.7 release APK. */
+    const val BT_BOOTSTRAP_IR_1 = "213.176.120.180"
     const val CA_STORE_ASSET = "file:///android_asset/cacert.pem"
 }
