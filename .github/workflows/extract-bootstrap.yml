@@ -1,0 +1,58 @@
+name: extract-ceno-bootstraps
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download official Ceno APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ceno-apk && cd ceno-apk
+          gh release view --repo censorship-no/ceno-browser --json tagName,assets \
+            --jq '.tagName, (.assets[].name)' | tee ../release.txt
+          # pick one APK (any ABI: BuildConfig is identical across ABIs)
+          name=$(gh release view --repo censorship-no/ceno-browser --json assets \
+            --jq '[.assets[].name | select(endswith(".apk"))] | (map(select(test("arm64")))+.)[0]')
+          echo "picked: $name" | tee -a ../release.txt
+          gh release download --repo censorship-no/ceno-browser --pattern "$name"
+          ls -la
+
+      - name: Extract BT bootstrap extras from BuildConfig
+        run: |
+          set -e
+          cd ceno-apk
+          unzip -q -o *.apk 'classes*.dex' -d dex
+          DEXDUMP=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)dexdump
+          out=../bootstrap-extract.txt
+          cat ../release.txt > $out
+          echo "==== BuildConfig static init (strings) ====" >> $out
+          for f in dex/*.dex; do
+            $DEXDUMP -d "$f" 2>/dev/null | awk '
+              /Class descriptor  : .Lie\/equalit\/ceno\/BuildConfig;/ {inb=1}
+              inb && /Class descriptor/ && !/BuildConfig;/ {inb=0}
+              inb && /const-string/ {print}
+            ' >> $out
+          done
+          echo "==== raw strings near IR_ ====" >> $out
+          for f in dex/*.dex; do strings -n 3 "$f" | grep -n -E "^(IR|RU|UA)_[0-9]+$" -A2 >> $out || true; done
+          cat $out
+
+      - name: Save result to the probe-data branch
+        run: |
+          git config user.name "AM.JMC"
+          git config user.email "272643218+Amirmahdavi2022@users.noreply.github.com"
+          git checkout --orphan probe-data
+          git rm -rq --cached . || true
+          git add -f bootstrap-extract.txt
+          git commit -m "Ceno bootstrap extract"
+          git push -f origin probe-data
