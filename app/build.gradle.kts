@@ -11,8 +11,8 @@ android {
         applicationId = "xyz.amjmc.cenoprobe"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0-probe"
+        versionCode = 2
+        versionName = "0.1.1-probe"
     }
 
     buildTypes {
@@ -46,4 +46,7 @@ android {
 dependencies {
     // Same engine version the official Ceno browser ships.
     implementation("ie.equalit.ouinet:ouinet-omni:1.6.11")
+    // The engine's Maven package doesn't declare these; Ceno adds them by hand too.
+    implementation("com.getkeepsafe.relinker:relinker:1.4.5")
+    implementation("androidx.appcompat:appcompat:1.7.1")
 }
