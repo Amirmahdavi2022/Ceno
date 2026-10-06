@@ -1,0 +1,39 @@
+v2.11.7
+ceno-2.11.7-2026-09-24_1603-release.aab
+ceno-arm64-v8a-release-2.11.7-2026-09-24_1601.apk
+ceno-armeabi-v7a-release-2.11.7-2026-09-24_1601.apk
+ceno-x86_64-release-2.11.7-2026-09-24_1601.apk
+sha256sums.txt
+sha256sums.txt.asc
+picked: ceno-arm64-v8a-release-2.11.7-2026-09-24_1601.apk
+==== BuildConfig static init (strings) ====
+5433e4: 1a00 012c                              |0000: const-string v0, "IR_1" // string@2c01
+5433e8: 1a01 750f                              |0002: const-string v1, "213.176.120.180" // string@0f75
+5433f4: 1a01 586c                              |0008: const-string v1, "RU_1" // string@6c58
+5433f8: 1a02 6e0f                              |000a: const-string v2, "185.126.239.184" // string@0f6e
+543404: 1a02 596c                              |0010: const-string v2, "RU_2" // string@6c59
+543408: 1a03 9e0f                              |0012: const-string v3, "89.169.169.37" // string@0f9e
+543414: 1a03 2479                              |0018: const-string v3, "UA_1" // string@7924
+543418: 1a04 620f                              |001a: const-string v4, "147.78.3.239" // string@0f62
+54343a: 1b01 0d34 0100                         |002b: const-string/jumbo v1, "website" // string@0001340d
+543440: 1a02 05ad                              |002e: const-string v2, "false" // string@ad05
+54344a: 1b03 a107 0100                         |0033: const-string/jumbo v3, "private" // string@000107a1
+543450: 1b04 a92b 0100                         |0036: const-string/jumbo v4, "true" // string@00012ba9
+54345c: 1b03 8f08 0100                         |003c: const-string/jumbo v3, "public" // string@0001088f
+543468: 1b03 bc1f 0100                         |0042: const-string/jumbo v3, "shared" // string@00011fbc
+543474: 1b03 3503 0100                         |0048: const-string/jumbo v3, "personalTab" // string@00010335
+543480: 1a00 002c                              |004e: const-string v0, "IR" // string@2c00
+5434be: 1a03 97c6                              |006d: const-string v3, "https://example.com" // string@c697
+==== raw strings near IR_ ====
+175627:IR_1
+175628-ISM_PATH_PATTERN
+175629-ISO
+--
+192003:RU_1
+192004:RU_2
+192005-RV FullInvalidate
+192006-RV Nested Prefetch
+--
+195251:UA_1
+195252-UByteArray(storage=
+195253-UC_BROWSER
