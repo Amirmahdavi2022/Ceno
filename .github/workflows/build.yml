@@ -3,6 +3,11 @@ name: build
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "engine/**"
+      - ".github/workflows/engine.yml"
+      - ".github/workflows/extract-bootstrap.yml"
+      - "README.md"
   workflow_dispatch:
 
 permissions:

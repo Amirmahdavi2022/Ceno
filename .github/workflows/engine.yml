@@ -1,0 +1,60 @@
+name: engine
+
+# Builds the Ouinet engine (v1.6.11) from source with our raw-tunnel patch,
+# and publishes the AAR as a release asset the app build downloads.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "engine/**"
+      - ".github/workflows/engine.yml"
+
+permissions:
+  contents: write
+
+env:
+  OUINET_TAG: v1.6.11
+  ENGINE_TAG: engine-1.6.11-jmc1
+
+jobs:
+  aar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          sudo docker image prune --all --force || true
+          df -h /
+
+      - name: Get Ouinet ${{ env.OUINET_TAG }}
+        run: |
+          git clone --branch "$OUINET_TAG" --depth 1 --recurse-submodules --shallow-submodules \
+            https://github.com/equalitie/ouinet.git ouinet
+          cd ouinet
+          git apply --verbose ../engine/raw-tunnel.patch
+          git -c user.name=AM.JMC -c user.email=272643218+Amirmahdavi2022@users.noreply.github.com \
+            commit -qam "raw tunnel patch"
+
+      - name: Build engine (arm64-v8a, release)
+        run: |
+          cd ouinet
+          ./docker/linux.sh --target-os android --android-abi arm64-v8a \
+            --cmake-build-type Release --artifact-dir ../engine-out \
+            -e GRADLE_TASKS=assembleRelease
+          ls -la ../engine-out/android
+
+      - name: Publish engine AAR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp engine-out/android/*.aar ouinet-jmc-arm64-v8a.aar
+          gh release delete "$ENGINE_TAG" --yes --cleanup-tag || true
+          gh release create "$ENGINE_TAG" ouinet-jmc-arm64-v8a.aar \
+            --title "Engine $ENGINE_TAG" \
+            --notes "Ouinet $OUINET_TAG + raw tunnel patch (engine/raw-tunnel.patch). Used by the app build." \
+            --prerelease

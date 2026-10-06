@@ -1,0 +1,102 @@
+diff --git a/src/client.cpp b/src/client.cpp
+index 57deca4..c50d686 100644
+--- a/src/client.cpp
++++ b/src/client.cpp
+@@ -427,6 +427,83 @@ private:
+ 
+     void serve_request(GenericStream&& con, YieldContext yield);
+ 
++    // ---- JMC patch: raw CONNECT tunnel through the injector (no MitM) ----
++    // Triggered by a CONNECT request carrying the `X-Ouinet-Raw-Tunnel` header.
++    // Bytes are piped as-is, so any TCP app (not only browsers) can use it.
++    void raw_tunnel_through_injector( GenericStream& con
++                                    , beast::flat_buffer& con_rbuf
++                                    , const Request& req
++                                    , YieldContext yield)
++    {
++        Cancel cancel(_shutdown_signal);
++        sys::error_code ec;
++
++        auto reply_error = [&] (http::status st) {
++            http::response<http::empty_body> res{st, req.version()};
++            res.keep_alive(false);
++            res.prepare_payload();
++            sys::error_code ec2;
++            yield[ec2].tag("raw_reply_err").run([&] (auto y) {
++                util::http_reply(con, res, y);
++            });
++        };
++
++        wait_for_injector(cancel, yield[ec]);
++        if (ec || !_injector) {
++            _YERROR(yield, "raw tunnel: injector not ready; ec=", ec);
++            return reply_error(http::status::service_unavailable);
++        }
++
++        auto inj = yield[ec].tag("raw_connect_injector").run([&] (auto y) {
++            return _injector->connect(y, cancel);
++        });
++        if (ec) {
++            _YERROR(yield, "raw tunnel: cannot reach injector; ec=", ec);
++            return reply_error(http::status::bad_gateway);
++        }
++
++        std::string target(req.target());
++        Request connreq = { http::verb::connect, target, 11 /* HTTP/1.1 */ };
++        connreq.set(http::field::host, target);
++        if (auto credentials = _config.credentials_for(inj.remote_endpoint))
++            connreq = authorize(connreq, *credentials);
++
++        yield[ec].tag("raw_connreq").run([&] (auto y) {
++            util::http_request(inj.connection, connreq, cancel, y);
++        });
++        if (ec) {
++            _YERROR(yield, "raw tunnel: CONNECT send failed; ec=", ec);
++            return reply_error(http::status::bad_gateway);
++        }
++
++        beast::flat_buffer inj_rbuf;
++        http::response_parser<http::empty_body> rp;
++        rp.skip(true);  // CONNECT response: header only
++        yield[ec].tag("raw_read_res").run([&] (auto y) {
++            http::async_read_header(inj.connection, inj_rbuf, rp, y);
++        });
++        if (ec || http::to_status_class(rp.get().result()) != http::status_class::successful) {
++            _YERROR(yield, "raw tunnel: injector refused ", target, "; ec=", ec);
++            return reply_error(http::status::bad_gateway);
++        }
++        if (inj_rbuf.size() > 0) inj.connection.put_back(inj_rbuf.data(), ec);
++
++        http::response<http::empty_body> ok{http::status::ok, req.version()};
++        yield[ec].tag("raw_reply_ok").run([&] (auto y) {
++            util::http_reply(con, ok, y);
++        });
++        if (ec) return;
++
++        if (con_rbuf.size() > 0) con.put_back(con_rbuf.data(), ec);
++        con_rbuf.consume(con_rbuf.size());
++
++        _YDEBUG(yield, "raw tunnel BEGIN ", target);
++        full_duplex( std::move(con), std::move(inj.connection)
++                   , cancel, yield[ec].tag("raw_full_duplex"));
++        _YDEBUG(yield, "raw tunnel END ", target, "; ec=", ec);
++    }
++    // ---- end JMC patch ----
++
+     // All `fetch_*` functions below take care of keeping or dropping
+     // Ouinet-specific internal HTTP headers as expected by upper layers.
+ 
+@@ -2660,6 +2737,13 @@ void Client::State::serve_request(GenericStream&& con, YieldContext yield_)
+ 
+         auto target = req.target();
+ 
++        // JMC patch: raw tunnel mode, used by the VPN layer.
++        if (!mitm && req.method() == http::verb::connect
++                  && req.find("X-Ouinet-Raw-Tunnel") != req.end()) {
++            raw_tunnel_through_injector(con, con_rbuf, req, yield.tag("raw_tunnel"));
++            break;
++        }
++
+         // Perform MitM for CONNECT requests (to be able to see encrypted requests)
+         if (!mitm && req.method() == http::verb::connect) {
+             sys::error_code ec;
