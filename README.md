@@ -9,7 +9,7 @@
 خود Ceno فقط برای مرورگر خودش این کارو می‌کنه و وسطش HTTPS رو باز می‌کنه. اینجا یه پچ کوچیک روی موتور زدیم (`engine/raw-tunnel.patch`) که تونل رو دست‌نخورده رد کنه، برای همین هر اپی که TCP روی پورت 80 یا 443 بزنه کار می‌کنه، از تلگرام تا اینستا.
 
 محدودیت‌ها:
-- سرعت پایینه، چون مسیر از چندتا همتا رد میشه
+- سرعت بسته به اینکه به کدوم injector و همتاها وصل بشی فرق می‌کنه
 - فقط پورت‌های 80، 443، 8080 و 8443 (injectorهای Ceno بقیه رو قبول نمی‌کنن)
 - UDP رد نمیشه، اپ‌ها خودشون میرن سراغ TCP
 - فعلاً فقط گوشی‌های arm64
@@ -32,5 +32,6 @@
 
 - [Ouinet](https://github.com/equalitie/ouinet) و [Ceno](https://github.com/censorship-no/ceno-browser) از eQualitie، لایسنس MIT
 - [hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) از heiher، لایسنس MIT
+- فونت [Vazirmatn](https://github.com/rastikerdar/vazirmatn) از صابر راستی‌کردار، لایسنس OFL
 
 این پروژه ربطی به eQualitie نداره.

@@ -16,26 +16,34 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.view.WindowInsets
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import java.io.File
+import java.util.Locale
 
 class MainActivity : Activity() {
 
     private val main = Handler(Looper.getMainLooper())
     private val easeOut = PathInterpolator(0.23f, 1f, 0.32f, 1f)
 
+    private lateinit var regular: Typeface
+    private lateinit var bold: Typeface
+
     private lateinit var power: PowerButton
     private lateinit var phaseText: TextView
     private lateinit var detailText: TextView
-    private lateinit var timerText: TextView
+    private lateinit var timerChip: TextView
     private lateinit var crashCard: LinearLayout
+    private var lastPhase: Status.Phase? = null
 
     private val onStatus: () -> Unit = { render() }
     private val tick = object : Runnable {
@@ -45,67 +53,116 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Status.init(this)
-        window.statusBarColor = BG
-        window.navigationBarColor = BG
+        regular = resources.getFont(R.font.vazir_regular)
+        bold = resources.getFont(R.font.vazir_bold)
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(BG))
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        // draw behind the bars on every version, not only Android 15
+        if (Build.VERSION.SDK_INT >= 30) {
+            window.setDecorFitsSystemWindows(false)
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setBackgroundColor(BG)
-            setPadding(dp(20), dp(36), dp(20), dp(20))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.parseColor("#121820"), BG, BG)
+            )
+        }
+        // Android 15 draws apps edge to edge: keep content clear of the system bars.
+        root.setOnApplyWindowInsetsListener { v, insets ->
+            val bars = if (Build.VERSION.SDK_INT >= 30) insets.getInsets(WindowInsets.Type.systemBars())
+                       else null
+            val top = bars?.top ?: insets.systemWindowInsetTop
+            val bottom = bars?.bottom ?: insets.systemWindowInsetBottom
+            v.setPadding(dp(22), top + dp(18), dp(22), bottom + dp(14))
+            insets
         }
 
-        root.addView(text("سایه", 26f, Color.WHITE, bold = true))
-        root.addView(text("بدون سرور، از راه شبکه‌ی همتابه‌همتای Ceno", 14f, MUTED).apply {
-            setPadding(0, dp(4), 0, 0)
-        })
+        // ---- header
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val logo = ImageView(this).apply {
+            setImageResource(R.drawable.ic_launcher_fg)
+            scaleX = 1.5f; scaleY = 1.5f
+        }
+        header.addView(FrameLayout(this).apply {
+            background = rounded(Color.parseColor("#17202A"), dp(14).toFloat())
+            clipToOutline = true
+            addView(logo, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        }, LinearLayout.LayoutParams(dp(44), dp(44)))
+        val titles = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, dp(12), 0)
+            addView(text("سایه", 22f, Color.WHITE, bold = true))
+            addView(text("بدون سرور، از راه شبکه‌ی همتابه‌همتا", 13f, MUTED))
+        }
+        header.addView(titles, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        root.addView(header, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
 
+        // ---- crash card (only after an unexpected exit)
         crashCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(Color.parseColor("#2A1C1C"), dp(14).toFloat())
-            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(Color.parseColor("#2A1A1B"), dp(18).toFloat(), Color.parseColor("#4A2A2B"))
+            setPadding(dp(16), dp(14), dp(16), dp(14))
             visibility = View.GONE
-            addView(text("دفعه‌ی قبل برنامه یهو بسته شد. گزارشش رو کپی کن و بفرست تا درستش کنم.", 13f,
-                Color.parseColor("#F3C9C4")))
-            addView(pill("کپی گزارش خرابی") { copyCrash() },
-                LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { topMargin = dp(10) })
+            addView(text("دفعه‌ی قبل برنامه یهو بسته شد", 14f, Color.parseColor("#F6D2CD"), bold = true))
+            addView(text("گزارشش رو کپی کن و بفرست تا درستش کنم.", 13f, Color.parseColor("#D9AFA9")).apply {
+                setPadding(0, dp(2), 0, 0)
+            })
+            addView(pill("کپی گزارش خرابی", Color.parseColor("#3A2425")) { copyCrash() },
+                LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { topMargin = dp(12) })
         }
-        root.addView(crashCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(16) })
+        root.addView(crashCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(18) })
 
-        // centre block
+        // ---- centre
         val centre = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
+            gravity = Gravity.CENTER_HORIZONTAL
         }
         power = PowerButton(this).apply { setOnClickListener { toggle() } }
-        centre.addView(power, LinearLayout.LayoutParams(dp(210), dp(210)))
-        phaseText = text("", 22f, Color.WHITE, bold = true).apply {
-            gravity = Gravity.CENTER; setPadding(0, dp(22), 0, 0)
+        centre.addView(power, LinearLayout.LayoutParams(dp(280), dp(280)))
+        phaseText = text("", 24f, Color.WHITE, bold = true).apply { gravity = Gravity.CENTER }
+        detailText = text("", 14f, MUTED).apply {
+            gravity = Gravity.CENTER; setPadding(dp(16), dp(4), dp(16), 0)
         }
-        detailText = text("", 14f, MUTED).apply { gravity = Gravity.CENTER; setPadding(dp(12), dp(6), dp(12), 0) }
-        timerText = text("", 13f, MUTED).apply {
-            gravity = Gravity.CENTER; setPadding(0, dp(6), 0, 0); typeface = Typeface.MONOSPACE
+        timerChip = text("", 14f, Color.parseColor("#BFF3DA")).apply {
+            gravity = Gravity.CENTER
+            background = rounded(Color.parseColor("#12261E"), dp(16).toFloat(), Color.parseColor("#1E4434"))
+            setPadding(dp(14), dp(5), dp(14), dp(5))
+            letterSpacing = 0.06f
+            visibility = View.INVISIBLE
         }
-        centre.addView(phaseText, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        centre.addView(phaseText, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = -dp(6) })
         centre.addView(detailText, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-        centre.addView(timerText, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        centre.addView(timerChip, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { topMargin = dp(14) })
         root.addView(FrameLayout(this).apply {
             addView(centre, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.CENTER))
         }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
 
-        // bottom row
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        row.addView(pill("کپی گزارش") { copyLog() })
+        // ---- bottom
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        row.addView(pill("کپی گزارش") { copyLog() }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         row.addView(View(this), LinearLayout.LayoutParams(dp(10), 1))
         row.addView(pill("کانال تلگرام") {
             try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(CHANNEL))) } catch (_: Throwable) {}
-        })
+        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         root.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-        root.addView(text("نسخه ${BuildConfig.VERSION_NAME}", 11f, Color.parseColor("#4E5864")).apply {
+        val version = text("نسخه ${BuildConfig.VERSION_NAME}", 11f, Color.parseColor("#4E5864")).apply {
             gravity = Gravity.CENTER; setPadding(0, dp(10), 0, 0)
-        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        }
+        root.addView(version, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
 
         setContentView(root)
+        enter(listOf(header, centre, row, version))
 
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -159,16 +216,18 @@ class MainActivity : Activity() {
         val f = crashFile()
         copy("sayeh-crash", (f.takeIf { it.exists() }?.readText() ?: "") + "\n\n=== log ===\n" + Status.fullReport())
         f.delete()
-        crashCard.animate().alpha(0f).setDuration(180).setInterpolator(easeOut)
-            .withEndAction { crashCard.visibility = View.GONE; crashCard.alpha = 1f }.start()
+        crashCard.animate().alpha(0f).translationY(-dp(6).toFloat()).setDuration(180).setInterpolator(easeOut)
+            .withEndAction { crashCard.visibility = View.GONE; crashCard.alpha = 1f; crashCard.translationY = 0f }
+            .start()
         toast("گزارش خرابی کپی شد")
     }
 
     // ------------------------------------------------------------------- render
 
     private fun render() {
-        power.setPhase(Status.phase)
-        phaseText.text = when (Status.phase) {
+        val p = Status.phase
+        power.setPhase(p)
+        val title = when (p) {
             Status.Phase.OFF -> "خاموش"
             Status.Phase.STARTING -> "در حال روشن شدن…"
             Status.Phase.SEARCHING -> "در حال اتصال…"
@@ -176,20 +235,67 @@ class MainActivity : Activity() {
             Status.Phase.STOPPING -> "در حال قطع…"
             Status.Phase.ERROR -> "وصل نشد"
         }
-        detailText.text = when (Status.phase) {
+        val detail = when (p) {
             Status.Phase.OFF -> if (Status.detail.isBlank() || Status.detail == "قطع شد") "برای وصل شدن دکمه رو بزن" else Status.detail
-            Status.Phase.ON -> "سرعت پایینه ولی بدون سرور کار می‌کنه"
+            Status.Phase.ON -> "همه‌ی اپ‌ها از سایه رد میشن"
             else -> Status.detail
         }
+        phaseText.setTextColor(
+            when (p) {
+                Status.Phase.ON -> Color.parseColor("#E9FFF5")
+                Status.Phase.ERROR -> Color.parseColor("#FFD9D5")
+                else -> Color.WHITE
+            }
+        )
+        if (p != lastPhase && lastPhase != null) {
+            swapText(phaseText, title)
+            swapText(detailText, detail)
+        } else {
+            phaseText.text = title
+            detailText.text = detail
+        }
+        lastPhase = p
         renderTimer()
+    }
+
+    /** Short fade + lift so the status line changes don't jump. */
+    private fun swapText(v: TextView, s: String) {
+        if (v.text == s) return
+        v.animate().cancel()
+        v.alpha = 0f
+        v.translationY = dp(4).toFloat()
+        v.text = s
+        v.animate().alpha(1f).translationY(0f).setDuration(200).setInterpolator(easeOut).start()
     }
 
     private fun renderTimer() {
         val t = Status.startedAt
-        timerText.text = if (Status.phase == Status.Phase.ON && t > 0) {
+        val on = Status.phase == Status.Phase.ON && t > 0
+        if (on) {
             val s = (System.currentTimeMillis() - t) / 1000
-            String.format(java.util.Locale.US, "%02d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60)
-        } else ""
+            timerChip.text = String.format(Locale.US, "%02d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60)
+        }
+        val want = if (on) View.VISIBLE else View.INVISIBLE
+        if (timerChip.visibility != want) {
+            if (on) {
+                timerChip.alpha = 0f; timerChip.scaleX = 0.95f; timerChip.scaleY = 0.95f
+                timerChip.visibility = View.VISIBLE
+                timerChip.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220).setInterpolator(easeOut).start()
+            } else {
+                timerChip.animate().alpha(0f).setDuration(150).setInterpolator(easeOut)
+                    .withEndAction { timerChip.visibility = View.INVISIBLE }.start()
+            }
+        }
+    }
+
+    /** Staggered fade-up on first open. */
+    private fun enter(views: List<View>) {
+        views.forEachIndexed { i, v ->
+            v.alpha = 0f
+            v.translationY = dp(10).toFloat()
+            v.animate().alpha(1f).translationY(0f)
+                .setStartDelay(60L * i).setDuration(320).setInterpolator(easeOut).start()
+        }
     }
 
     // ------------------------------------------------------------------ helpers
@@ -205,36 +311,43 @@ class MainActivity : Activity() {
 
     private fun text(s: String, size: Float, color: Int, bold: Boolean = false) = TextView(this).apply {
         text = s; textSize = size; setTextColor(color)
-        if (bold) typeface = Typeface.DEFAULT_BOLD
+        typeface = if (bold) this@MainActivity.bold else regular
+        includeFontPadding = false
+        setLineSpacing(0f, 1.15f)
     }
 
-    private fun pill(label: String, onClick: () -> Unit) = TextView(this).apply {
+    private fun pill(label: String, bg: Int = Color.parseColor("#161C23"), onClick: () -> Unit) = TextView(this).apply {
         text = label
         textSize = 14f
+        typeface = regular
+        includeFontPadding = false
         setTextColor(Color.parseColor("#D7DEE6"))
         gravity = Gravity.CENTER
-        background = rounded(Color.parseColor("#1B2027"), dp(22).toFloat())
-        setPadding(dp(18), dp(11), dp(18), dp(11))
+        background = rounded(bg, dp(16).toFloat(), Color.parseColor("#232B35"))
+        setPadding(dp(16), dp(13), dp(16), dp(13))
         isClickable = true
         setOnClickListener { onClick() }
         setOnTouchListener { v, e ->
             when (e.actionMasked) {
-                android.view.MotionEvent.ACTION_DOWN ->
-                    v.animate().scaleX(0.97f).scaleY(0.97f).setDuration(160).setInterpolator(easeOut).start()
-                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL ->
-                    v.animate().scaleX(1f).scaleY(1f).setDuration(160).setInterpolator(easeOut).start()
+                MotionEvent.ACTION_DOWN ->
+                    v.animate().scaleX(0.97f).scaleY(0.97f).setDuration(140).setInterpolator(easeOut).start()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                    v.animate().scaleX(1f).scaleY(1f).setDuration(200).setInterpolator(easeOut).start()
             }
             false
         }
     }
 
-    private fun rounded(color: Int, r: Float) = GradientDrawable().apply { setColor(color); cornerRadius = r }
+    private fun rounded(color: Int, r: Float, stroke: Int? = null) = GradientDrawable().apply {
+        setColor(color); cornerRadius = r
+        if (stroke != null) setStroke(dp(1), stroke)
+    }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     companion object {
         private const val REQ_VPN = 1
-        private val BG = Color.parseColor("#0E1116")
+        private val BG = Color.parseColor("#0C1015")
         private val MUTED = Color.parseColor("#8A949F")
         private const val CHANNEL = "https://t.me/parsv2r"
     }
