@@ -14,7 +14,19 @@ object CenoNetwork {
         ""
     const val CACHE_TYPE = "bep5-http"
 
-    /** IR_1 from BuildConfig.BT_BOOTSTRAP_EXTRAS of the official Ceno 2.11.7 release APK. */
+    /**
+     * Extra BitTorrent DHT bootstrap nodes, all four from BuildConfig.BT_BOOTSTRAP_EXTRAS of the
+     * official Ceno 2.11.7 release APK (extracted by .github/workflows/extract-bootstrap.yml).
+     * The engine tries these in parallel with its 5 built-in nodes and the contacts it saved from
+     * earlier runs; any single one answering is enough, a blocked one just times out.
+     * IR_1 is proven on our line; the others are spares in case it gets blocked.
+     */
     const val BT_BOOTSTRAP_IR_1 = "213.176.120.180"
+    val BT_BOOTSTRAP_EXTRAS = setOf(
+        BT_BOOTSTRAP_IR_1,   // IR_1
+        "185.126.239.184",   // RU_1
+        "89.169.169.37",     // RU_2
+        "147.78.3.239",      // UA_1
+    )
     const val CA_STORE_ASSET = "file:///android_asset/cacert.pem"
 }

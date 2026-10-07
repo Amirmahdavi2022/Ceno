@@ -76,7 +76,7 @@ class SayehVpnService : VpnService() {
                 .setListenOnTcp("127.0.0.1:0")
                 .setFrontEndEp("127.0.0.1:0")
                 .setFrontEndAccessToken(frontToken)
-                .setBtBootstrapExtras(setOf(CenoNetwork.BT_BOOTSTRAP_IR_1))
+                .setBtBootstrapExtras(CenoNetwork.BT_BOOTSTRAP_EXTRAS)
                 .setDnsProtocols(setOf("plain"))
                 .setDisableOriginAccess(true)
                 .build()
