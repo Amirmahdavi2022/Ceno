@@ -9,9 +9,20 @@ on:
       - ".github/workflows/extract-bootstrap.yml"
       - "README.md"
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish a release (needs KEYSTORE_B64 + KEYSTORE_PASS secrets)"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
+
+env:
+  ENGINE_TAG: engine-1.6.11-jmc1
+  # hev-socks5-tunnel 2.18.0 (MIT)
+  HEV_COMMIT: d9dca26c7ad0e494492244f0309e80ee583e739e
+  VERSION_NAME: 0.1.${{ github.run_number }}
 
 jobs:
   apk:
@@ -29,31 +40,91 @@ jobs:
         with:
           gradle-version: 8.14.3
 
-      - name: Build debug APKs
-        run: |
-          echo "sdk.dir=$ANDROID_HOME" > local.properties
-          gradle :app:assembleDebug --stacktrace
-
-      - name: Collect APKs
-        run: |
-          mkdir -p out
-          for f in app/build/outputs/apk/debug/*.apk; do
-            n=$(basename "$f" | sed 's/^app-/ceno-probe-/')
-            cp "$f" "out/$n"
-          done
-          ls -la out
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ceno-probe-apks
-          path: out/*.apk
-
-      - name: Publish release
+      - name: Get patched engine
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="probe-${{ github.run_number }}"
-          gh release create "$tag" out/*.apk \
-            --title "Ceno Probe build ${{ github.run_number }}" \
-            --notes "Test build. arm64-v8a fits almost every phone from the last few years." \
+          mkdir -p app/libs
+          gh release download "$ENGINE_TAG" --pattern '*.aar' --output app/libs/ouinet-jmc.aar --clobber
+          # refuse to ship an engine without our patch inside
+          unzip -p app/libs/ouinet-jmc.aar jni/arm64-v8a/libclient.so | grep -a -c "X-Ouinet-Raw-Tunnel"
+
+      - name: Build hev-socks5-tunnel (arm64)
+        run: |
+          git clone --quiet https://github.com/heiher/hev-socks5-tunnel.git hev
+          cd hev
+          git checkout --quiet "$HEV_COMMIT"
+          git submodule update --init --recursive --depth 1
+          NDK="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          "$NDK/ndk-build" NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=./Android.mk \
+            NDK_APPLICATION_MK=./Application.mk APP_ABI=arm64-v8a -j"$(nproc)"
+          mkdir -p ../app/src/main/jniLibs/arm64-v8a
+          cp libs/arm64-v8a/libhev-socks5-tunnel.so ../app/src/main/jniLibs/arm64-v8a/
+          file ../app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so
+
+      - name: Keystore
+        id: ks
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | tr -d ' \r\n' | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "file=$RUNNER_TEMP/release.jks" >> "$GITHUB_OUTPUT"
+          else
+            echo "No signing secrets yet: building a debug APK as a compile check only."
+          fi
+
+      - name: Build APK
+        env:
+          KEYSTORE_FILE: ${{ steps.ks.outputs.file }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          [ -n "$KEYSTORE_FILE" ] || unset KEYSTORE_FILE
+          task=assembleDebug; [ -n "$KEYSTORE_FILE" ] && task=assembleRelease
+          set -o pipefail
+          gradle ":app:$task" -PappVersionCode=${{ github.run_number }} -PappVersionName="$VERSION_NAME" \
+            --stacktrace 2>&1 | tee build.log
+
+      - name: Check APK
+        run: |
+          set -e
+          apk=$(ls app/build/outputs/apk/*/*.apk | head -1)
+          echo "APK: $apk"
+          unzip -l "$apk" | grep -E "lib/arm64-v8a/(libclient|libhev-socks5-tunnel)\.so"
+          unzip -p "$apk" lib/arm64-v8a/libclient.so | grep -a -c "X-Ouinet-Raw-Tunnel"
+          BT=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)
+          "$BT/apksigner" verify --print-certs "$apk" | head -5
+          mkdir -p out
+          cp "$apk" "out/sayeh-$VERSION_NAME-arm64.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sayeh-apk
+          path: out/*.apk
+
+      - name: Publish release
+        if: steps.ks.outputs.file != '' && (github.event_name == 'push' || inputs.release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v$VERSION_NAME"
+          gh release create "$tag" out/*.apk --target "$GITHUB_SHA" \
+            --title "Sayeh $VERSION_NAME" \
+            --notes "Test build for arm64 phones. Turn every other VPN off before connecting." \
             --prerelease
+
+      - name: Save failure log
+        if: failure()
+        run: |
+          [ -f build.log ] || echo "failed before gradle" > build.log
+          tail -n 250 build.log > /tmp/fail.log
+          git config user.name "AM.JMC"
+          git config user.email "272643218+Amirmahdavi2022@users.noreply.github.com"
+          git fetch -q origin ci-logs || true
+          git checkout -q -B ci-logs origin/ci-logs 2>/dev/null || git checkout -q --orphan ci-logs
+          git rm -rq --cached . 2>/dev/null || true
+          cp /tmp/fail.log "build-${{ github.run_number }}.log"
+          git add -f "build-${{ github.run_number }}.log"
+          git commit -qm "log ${{ github.run_number }}"
+          git push -q origin HEAD:ci-logs

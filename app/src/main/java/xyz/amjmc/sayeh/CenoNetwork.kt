@@ -1,4 +1,4 @@
-package xyz.amjmc.cenoprobe
+package xyz.amjmc.sayeh
 
 /**
  * Public Ouinet network parameters of the Ceno network, copied verbatim from
