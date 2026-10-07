@@ -159,7 +159,14 @@ class SayehVpnService : VpnService() {
                 .establish()
                 ?: return fail("اجازه‌ی وی‌پی‌ان داده نشده", null)
             tun = fd
-            TProxyService.TProxyStartService(conf.absolutePath, fd.fd)
+            if (!TProxyService.TProxyStartService(conf.absolutePath, fd.fd)) {
+                return fail("تونل داخلی بالا نیامد", null)
+            }
+            // hev exits its thread right away if it rejects the config; give it a moment
+            Thread.sleep(400)
+            if (!TProxyService.TProxyIsRunning()) {
+                return fail("تونل داخلی بلافاصله بسته شد", null)
+            }
 
             Status.set(Status.Phase.ON, "وصلی")
             updateNotification("وصل")

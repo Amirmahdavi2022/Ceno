@@ -86,6 +86,26 @@ jobs:
           gradle ":app:$task" -PappVersionCode=${{ github.run_number }} -PappVersionName="$VERSION_NAME" \
             --stacktrace 2>&1 | tee build.log
 
+      - name: Check JNI signatures match hev
+        run: |
+          # JNI_OnLoad fails the whole library if one declared method doesn't match
+          set -e
+          cls=$(find app/build/intermediates -path '*hev/htproxy/TProxyService.class' | head -1)
+          echo "class: $cls"
+          javap -s -p "$cls" > /tmp/javap.txt
+          cat /tmp/javap.txt
+          grep -oE '\{ *"TProxy[A-Za-z]+", *"[^"]+"' hev/src/hev-jni.c | sed -E 's/\{ *"([^"]+)", *"([^"]+)"/\1 \2/' > /tmp/cnatives.txt
+          cat /tmp/cnatives.txt
+          [ -s /tmp/cnatives.txt ]
+          while read -r name sig; do
+            awk -v n="$name" -v s="$sig" '
+              index($0, " " n "(") { found=1; next }
+              found && index($0, "descriptor:") { if ($2 == s) ok=1; found=0 }
+              END { exit ok ? 0 : 1 }' /tmp/javap.txt \
+              || { echo "MISMATCH: $name $sig not declared in TProxyService.java"; exit 1; }
+          done < /tmp/cnatives.txt
+          echo "all $(wc -l < /tmp/cnatives.txt) native methods match"
+
       - name: Check APK
         run: |
           set -e
